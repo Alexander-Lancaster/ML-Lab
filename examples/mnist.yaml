@@ -1,0 +1,22 @@
+model:
+  name: mnist_classifier
+
+input:
+  shape: [1, 28, 28]
+
+layers:
+  - type: Conv2d
+    params:
+      in_channels: 1
+      out_channels: 16
+      kernel_size: 3
+      padding: 1
+  - type: ReLU
+  - type: MaxPool2d
+    params:
+      kernel_size: 2
+  - type: Flatten
+  - type: Linear
+    params:
+      in_features: 3136
+      out_features: 10
