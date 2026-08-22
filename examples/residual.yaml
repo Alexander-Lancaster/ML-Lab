@@ -1,0 +1,48 @@
+model:
+  name: residual_example
+
+inputs:
+  image:
+    shape: [3, 32, 32]
+
+layers:
+  - id: stem
+    type: Conv2d
+    inputs: [image]
+    params:
+      in_channels: 3
+      out_channels: 16
+      kernel_size: 3
+      padding: 1
+
+  - id: conv1
+    type: Conv2d
+    inputs: [stem]
+    params:
+      in_channels: 16
+      out_channels: 16
+      kernel_size: 3
+      padding: 1
+
+  - id: activation
+    type: ReLU
+    inputs: [conv1]
+
+  - id: conv2
+    type: Conv2d
+    inputs: [activation]
+    params:
+      in_channels: 16
+      out_channels: 16
+      kernel_size: 3
+      padding: 1
+
+  - id: residual
+    type: Add
+    inputs: [stem, conv2]
+
+  - id: output
+    type: ReLU
+    inputs: [residual]
+
+outputs: [output]
