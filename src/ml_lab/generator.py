@@ -174,7 +174,10 @@ def build_model(config: ArchitectureConfig) -> GraphModel:
         if constructor is None:
             supported = ", ".join(sorted(registry))
             raise ConfigurationError(
-                f"layers[{index}].type: unsupported layer {layer.type!r}; supported: {supported}"
+                f"layers[{index}].type: unsupported layer {layer.type!r}; supported: {supported}",
+                code="unsupported_layer",
+                path=("layers", index, "type"),
+                node_id=layer.id,
             )
         try:
             modules[layer.id] = constructor(**layer.params)
@@ -184,7 +187,12 @@ def build_model(config: ArchitectureConfig) -> GraphModel:
                 hint = f"; expected {layer.type}{signature}"
             except (TypeError, ValueError):
                 hint = ""
-            raise ConfigurationError(f"layers[{index}].params: {exc}{hint}") from exc
+            raise ConfigurationError(
+                f"layers[{index}].params: {exc}{hint}",
+                code="invalid_layer_params",
+                path=("layers", index, "params"),
+                node_id=layer.id,
+            ) from exc
     return GraphModel(config, modules)
 
 
@@ -222,12 +230,18 @@ def validate_architecture(config: ArchitectureConfig) -> ArchitectureValidation:
             except Exception as exc:
                 raise ConfigurationError(
                     f"layers[{index}] {layer.id!r} ({layer.type}) cannot process input "
-                    f"shape(s) {node_input_shapes}: {exc}"
+                    f"shape(s) {node_input_shapes}: {exc}",
+                    code="incompatible_shapes",
+                    path=("layers", index, "inputs"),
+                    node_id=layer.id,
                 ) from exc
             if not isinstance(output, torch.Tensor):
                 raise ConfigurationError(
                     f"layers[{index}] {layer.id!r} ({layer.type}) returned "
-                    f"{type(output).__name__}, expected a tensor"
+                    f"{type(output).__name__}, expected a tensor",
+                    code="invalid_layer_output",
+                    path=("layers", index),
+                    node_id=layer.id,
                 )
             output_shape = tuple(output.shape)
             values[layer.id] = output

@@ -1,16 +1,32 @@
 """Build PyTorch architectures from declarative YAML files."""
 
-from .config import ArchitectureConfig, ConfigurationError, LayerConfig, load_config
+from .config import (
+    CURRENT_FORMAT_VERSION,
+    ArchitectureConfig,
+    ConfigurationError,
+    LayerConfig,
+    ValidationIssue,
+    load_config,
+)
+from .editable import EditableGraph, EditableLayer
+from .serialization import config_to_dict, dump_config, save_config
 
 __all__ = [
     "ArchitectureConfig",
     "ArchitectureValidation",
+    "CURRENT_FORMAT_VERSION",
     "ConfigurationError",
+    "EditableGraph",
+    "EditableLayer",
     "GraphModel",
     "LayerConfig",
     "LayerValidation",
+    "ValidationIssue",
     "build_model",
+    "config_to_dict",
+    "dump_config",
     "load_config",
+    "save_config",
     "validate_architecture",
 ]
 

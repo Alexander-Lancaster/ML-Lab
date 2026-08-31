@@ -9,8 +9,32 @@ import re
 from typing import Any
 
 
+CURRENT_FORMAT_VERSION = 1
+
+
+@dataclass(frozen=True)
+class ValidationIssue:
+    """A machine-readable configuration problem for CLIs and user interfaces."""
+
+    code: str
+    message: str
+    path: tuple[str | int, ...] = ()
+    node_id: str | None = None
+
+
 class ConfigurationError(ValueError):
     """Raised when an architecture file is malformed."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "invalid_configuration",
+        path: tuple[str | int, ...] = (),
+        node_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.issue = ValidationIssue(code=code, message=message, path=path, node_id=node_id)
 
 
 _ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
@@ -36,6 +60,7 @@ class ArchitectureConfig:
     inputs: dict[str, tuple[int, ...]]
     layers: tuple[LayerConfig, ...]
     outputs: tuple[str, ...]
+    format_version: int = CURRENT_FORMAT_VERSION
 
     @property
     def input_shape(self) -> tuple[int, ...]:
@@ -49,16 +74,26 @@ def _require_keys(value: dict[str, Any], allowed: set[str], location: str) -> No
     unknown = set(value) - allowed
     if unknown:
         names = ", ".join(sorted(unknown))
-        raise ConfigurationError(f"{location}: unknown field(s): {names}")
+        raise ConfigurationError(
+            f"{location}: unknown field(s): {names}",
+            code="unknown_field",
+            path=(location,),
+        )
 
 
 def _validate_id(value: Any, location: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise ConfigurationError(f"{location} must be a non-empty string")
+        raise ConfigurationError(
+            f"{location} must be a non-empty string",
+            code="invalid_id",
+            path=(location,),
+        )
     if not _ID_PATTERN.fullmatch(value):
         raise ConfigurationError(
             f"{location} must start with a letter or underscore and contain only "
-            "letters, numbers, underscores, or hyphens"
+            "letters, numbers, underscores, or hyphens",
+            code="invalid_id",
+            path=(location,),
         )
     return value
 
@@ -72,7 +107,11 @@ def _parse_shape(value: Any, location: str) -> tuple[int, ...]:
             for size in value
         )
     ):
-        raise ConfigurationError(f"{location} must be a non-empty list of positive integers")
+        raise ConfigurationError(
+            f"{location} must be a non-empty list of positive integers",
+            code="invalid_shape",
+            path=(location,),
+        )
     return tuple(value)
 
 
@@ -112,10 +151,18 @@ def _topological_sort(
     for index, layer in enumerate(layers):
         if layer.id in input_names:
             raise ConfigurationError(
-                f"layers[{index}].id: {layer.id!r} conflicts with a model input"
+                f"layers[{index}].id: {layer.id!r} conflicts with a model input",
+                code="duplicate_id",
+                path=("layers", index, "id"),
+                node_id=layer.id,
             )
         if layer.id in by_id:
-            raise ConfigurationError(f"layers[{index}].id: duplicate id {layer.id!r}")
+            raise ConfigurationError(
+                f"layers[{index}].id: duplicate id {layer.id!r}",
+                code="duplicate_id",
+                path=("layers", index, "id"),
+                node_id=layer.id,
+            )
         by_id[layer.id] = layer
         original_index[layer.id] = index
 
@@ -124,7 +171,10 @@ def _topological_sort(
         for input_index, reference in enumerate(layer.inputs):
             if reference not in known:
                 raise ConfigurationError(
-                    f"layers[{index}].inputs[{input_index}]: unknown reference {reference!r}"
+                    f"layers[{index}].inputs[{input_index}]: unknown reference {reference!r}",
+                    code="unknown_reference",
+                    path=("layers", index, "inputs", input_index),
+                    node_id=layer.id,
                 )
 
     indegree = {layer.id: 0 for layer in layers}
@@ -148,7 +198,11 @@ def _topological_sort(
     if len(ordered) != len(layers):
         cycle_ids = [node_id for node_id, degree in indegree.items() if degree > 0]
         cycle_ids.sort(key=original_index.__getitem__)
-        raise ConfigurationError(f"architecture graph contains a cycle involving: {', '.join(cycle_ids)}")
+        raise ConfigurationError(
+            f"architecture graph contains a cycle involving: {', '.join(cycle_ids)}",
+            code="cycle",
+            node_id=cycle_ids[0],
+        )
     return tuple(ordered)
 
 
@@ -159,7 +213,11 @@ def _validate_outputs_and_usage(
     known = input_names | set(by_id)
     for index, output in enumerate(outputs):
         if output not in known:
-            raise ConfigurationError(f"outputs[{index}]: unknown reference {output!r}")
+            raise ConfigurationError(
+                f"outputs[{index}]: unknown reference {output!r}",
+                code="unknown_output",
+                path=("outputs", index),
+            )
 
     required = set(outputs)
     pending = list(outputs)
@@ -177,7 +235,9 @@ def _validate_outputs_and_usage(
     if unused:
         raise ConfigurationError(
             "architecture contains node(s) that do not contribute to an output: "
-            + ", ".join(unused)
+            + ", ".join(unused),
+            code="unused_node",
+            node_id=unused[0],
         )
 
 
@@ -185,7 +245,25 @@ def parse_config(data: Any) -> ArchitectureConfig:
     """Validate decoded YAML and normalize it into an architecture graph."""
     if not isinstance(data, dict):
         raise ConfigurationError("document must be a mapping")
-    _require_keys(data, {"model", "input", "inputs", "layers", "outputs"}, "document")
+    _require_keys(
+        data,
+        {"format_version", "model", "input", "inputs", "layers", "outputs"},
+        "document",
+    )
+
+    format_version = data.get("format_version", CURRENT_FORMAT_VERSION)
+    if not isinstance(format_version, int) or isinstance(format_version, bool):
+        raise ConfigurationError(
+            "format_version must be an integer",
+            code="invalid_format_version",
+            path=("format_version",),
+        )
+    if format_version != CURRENT_FORMAT_VERSION:
+        raise ConfigurationError(
+            f"unsupported format_version {format_version}; expected {CURRENT_FORMAT_VERSION}",
+            code="unsupported_format_version",
+            path=("format_version",),
+        )
 
     model = data.get("model")
     if not isinstance(model, dict):
@@ -258,6 +336,7 @@ def parse_config(data: Any) -> ArchitectureConfig:
         inputs=inputs,
         layers=ordered_layers,
         outputs=outputs,
+        format_version=format_version,
     )
 
 

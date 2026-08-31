@@ -54,6 +54,8 @@ Graph architectures use named inputs, unique layer IDs, explicit input
 references, and declared outputs. This example creates a residual connection:
 
 ```yaml
+format_version: 1
+
 model:
   name: residual_example
 
@@ -100,6 +102,41 @@ combines at least two tensors and accepts a `dim` parameter:
 
 Graph validation rejects duplicate IDs, unknown references, dependency cycles,
 unused nodes, unknown outputs, and invalid merge shapes before the model is used.
+
+## Serialization and editor state
+
+`format_version` identifies the YAML schema. Files without it are treated as
+version 1 for backward compatibility, while newly saved files always include
+it. Saving uses one canonical graph representation, even when the source used
+the older sequential shorthand.
+
+```python
+from ml_lab import dump_config, load_config, save_config
+
+config = load_config("examples/mnist.yaml")
+print(dump_config(config))
+save_config(config, "generated-model.yaml")
+```
+
+`EditableGraph` is mutable state intended for a future GUI. Unlike a validated
+`ArchitectureConfig`, it may temporarily contain missing connections or
+incompatible shapes:
+
+```python
+from ml_lab import EditableGraph, load_config
+
+editable = EditableGraph.from_config(load_config("examples/mnist.yaml"))
+editable.layers[0].inputs = ["missing_node"]
+
+for issue in editable.validate():
+    print(issue.code, issue.node_id, issue.path, issue.message)
+```
+
+Use `editable.validate(check_shapes=True)` to include PyTorch tensor-shape
+validation. `editable.to_config()` returns an immutable configuration when the
+graph is valid and raises `ConfigurationError` otherwise. Validation issues
+provide a stable `code`, structured field `path`, optional `node_id`, and a
+human-readable `message` so interfaces do not need to parse error strings.
 
 ## Generate the model
 
