@@ -4,6 +4,22 @@ ML-Lab generates executable PyTorch neural-network graphs from validated YAML
 files. It supports sequential networks, branches, residual connections, named
 inputs, and multiple outputs.
 
+## Architecture viewer
+
+The read-only web viewer in `gui/` visualizes the network graph, node and layer
+counts, connections, layer-type inventory, configured parameters, inputs, and
+outputs. It includes the MNIST and residual examples and can open another ML-Lab
+YAML file locally in the browser.
+
+```bash
+cd gui
+npm install
+npm run dev
+```
+
+Opening a file in the viewer does not upload it. This first GUI milestone is an
+inspector only; graph editing will be added separately.
+
 ## Install
 
 Python 3.10 or newer is required. From the project directory:
