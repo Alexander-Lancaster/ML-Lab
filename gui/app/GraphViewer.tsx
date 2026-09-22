@@ -31,8 +31,33 @@ type PositionedNode = {
 
 const NODE_WIDTH = 202;
 const NODE_HEIGHT = 116;
-const X_GAP = 84;
-const Y_GAP = 42;
+const X_GAP = 62;
+const Y_GAP = 76;
+
+const layerTypes = [
+  "Conv1d", "Conv2d", "Conv3d", "Linear", "LazyLinear",
+  "ReLU", "GELU", "LeakyReLU", "ELU", "Sigmoid", "Tanh",
+  "MaxPool1d", "MaxPool2d", "MaxPool3d", "AvgPool1d", "AvgPool2d", "AvgPool3d",
+  "AdaptiveAvgPool1d", "AdaptiveAvgPool2d", "AdaptiveAvgPool3d",
+  "BatchNorm1d", "BatchNorm2d", "BatchNorm3d", "LayerNorm",
+  "Dropout", "Dropout2d", "Dropout3d", "Flatten", "Identity",
+  "Softmax", "LogSoftmax", "Add", "Concatenate",
+];
+
+const defaultParams: Record<string, Record<string, unknown>> = {
+  Conv1d: { in_channels: 1, out_channels: 16, kernel_size: 3 },
+  Conv2d: { in_channels: 1, out_channels: 16, kernel_size: 3, padding: 1 },
+  Conv3d: { in_channels: 1, out_channels: 16, kernel_size: 3 },
+  Linear: { in_features: 128, out_features: 10 },
+  LazyLinear: { out_features: 10 },
+  LeakyReLU: { negative_slope: 0.01 },
+  MaxPool1d: { kernel_size: 2 }, MaxPool2d: { kernel_size: 2 }, MaxPool3d: { kernel_size: 2 },
+  AvgPool1d: { kernel_size: 2 }, AvgPool2d: { kernel_size: 2 }, AvgPool3d: { kernel_size: 2 },
+  AdaptiveAvgPool1d: { output_size: 1 }, AdaptiveAvgPool2d: { output_size: [1, 1] }, AdaptiveAvgPool3d: { output_size: [1, 1, 1] },
+  BatchNorm1d: { num_features: 16 }, BatchNorm2d: { num_features: 16 }, BatchNorm3d: { num_features: 16 },
+  LayerNorm: { normalized_shape: 16 }, Dropout: { p: 0.5 }, Dropout2d: { p: 0.5 }, Dropout3d: { p: 0.5 },
+  Softmax: { dim: 1 }, LogSoftmax: { dim: 1 }, Concatenate: { dim: 1 },
+};
 
 const samples: Record<string, Architecture> = {
   residual: {
@@ -119,15 +144,17 @@ function layoutGraph(architecture: Architecture) {
 
   const groups = new Map<number, string[]>();
   level.forEach((value, id) => groups.set(value, [...(groups.get(value) ?? []), id]));
-  const maxRows = Math.max(...[...groups.values()].map((group) => group.length));
-  const canvasHeight = Math.max(420, maxRows * (NODE_HEIGHT + Y_GAP) + 110);
+  const maxColumns = Math.max(...[...groups.values()].map((group) => group.length));
+  const maxLevel = Math.max(...level.values());
+  const canvasWidth = Math.max(620, maxColumns * NODE_WIDTH + (maxColumns - 1) * X_GAP + 112);
+  const canvasHeight = 96 + (maxLevel + 1) * NODE_HEIGHT + maxLevel * Y_GAP;
   const layerById = new Map(architecture.layers.map((layer) => [layer.id, layer]));
   const nodes: PositionedNode[] = [];
 
-  [...groups.entries()].sort(([a], [b]) => a - b).forEach(([column, ids]) => {
-    const blockHeight = ids.length * NODE_HEIGHT + (ids.length - 1) * Y_GAP;
-    const startY = (canvasHeight - blockHeight) / 2;
-    ids.forEach((id, row) => {
+  [...groups.entries()].sort(([a], [b]) => a - b).forEach(([row, ids]) => {
+    const blockWidth = ids.length * NODE_WIDTH + (ids.length - 1) * X_GAP;
+    const startX = (canvasWidth - blockWidth) / 2;
+    ids.forEach((id, column) => {
       const layer = layerById.get(id);
       const input = architecture.inputs[id];
       nodes.push({
@@ -137,15 +164,15 @@ function layoutGraph(architecture: Architecture) {
         inputs: layer?.inputs ?? [],
         params: layer?.params ?? {},
         shape: input?.shape,
-        x: 48 + column * (NODE_WIDTH + X_GAP),
-        y: startY + row * (NODE_HEIGHT + Y_GAP),
+        x: startX + column * (NODE_WIDTH + X_GAP),
+        y: 48 + row * (NODE_HEIGHT + Y_GAP),
       });
     });
   });
 
   return {
     nodes,
-    width: 96 + (Math.max(...level.values()) + 1) * NODE_WIDTH + Math.max(...level.values()) * X_GAP,
+    width: canvasWidth,
     height: canvasHeight,
   };
 }
@@ -164,11 +191,38 @@ function formatValue(value: unknown) {
   return String(value);
 }
 
+function parseEditorValue(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try { return JSON.parse(trimmed); } catch { return value; }
+}
+
+function cloneArchitecture(architecture: Architecture): Architecture {
+  return structuredClone(architecture);
+}
+
+function graphIssues(architecture: Architecture): string[] {
+  const known = new Set(Object.keys(architecture.inputs));
+  const issues: string[] = [];
+  architecture.layers.forEach((layer) => {
+    layer.inputs.forEach((input) => {
+      if (!known.has(input)) issues.push(`${layer.id} references missing node “${input}”.`);
+    });
+    const isMerge = layer.type === "Add" || layer.type === "Concatenate";
+    if (isMerge && layer.inputs.length < 2) issues.push(`${layer.type} requires at least two inputs.`);
+    if (!isMerge && layer.inputs.length !== 1) issues.push(`${layer.type} expects one input; ${layer.id} has ${layer.inputs.length}.`);
+    known.add(layer.id);
+  });
+  return issues;
+}
+
 export function GraphViewer() {
-  const [architecture, setArchitecture] = useState(samples.residual);
+  const [architecture, setArchitecture] = useState(() => cloneArchitecture(samples.residual));
+  const [baseline, setBaseline] = useState(() => cloneArchitecture(samples.residual));
   const [sourceLabel, setSourceLabel] = useState("Example · residual.yaml");
   const [selectedId, setSelectedId] = useState("residual");
   const [error, setError] = useState("");
+  const [hasEdits, setHasEdits] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const graph = useMemo(() => layoutGraph(architecture), [architecture]);
   const selected = graph.nodes.find((node) => node.id === selectedId) ?? graph.nodes[0];
@@ -180,25 +234,75 @@ export function GraphViewer() {
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
   const outputSet = new Set(architecture.outputs);
   const connectionCount = architecture.layers.reduce((total, layer) => total + layer.inputs.length, 0);
+  const issues = graphIssues(architecture);
 
   function selectSample(key: keyof typeof samples) {
-    const next = samples[key];
+    const next = cloneArchitecture(samples[key]);
     setArchitecture(next);
+    setBaseline(cloneArchitecture(next));
     setSourceLabel(`Example · ${key}.yaml`);
     setSelectedId(next.layers[0].id);
     setError("");
+    setHasEdits(false);
   }
 
   async function loadFile(file: File) {
     try {
       const parsed = normalizeArchitecture(loadYaml(await file.text()));
       setArchitecture(parsed);
+      setBaseline(cloneArchitecture(parsed));
       setSourceLabel(`Local file · ${file.name}`);
       setSelectedId(parsed.layers[0].id);
       setError("");
+      setHasEdits(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not read that YAML file.");
     }
+  }
+
+  function updateSelectedLayer(update: (layer: Layer) => Layer) {
+    if (!selected || selected.kind !== "layer") return;
+    setArchitecture((current) => ({
+      ...current,
+      layers: current.layers.map((layer) => layer.id === selected.id ? update(layer) : layer),
+    }));
+    setHasEdits(true);
+  }
+
+  function resetEdits() {
+    setArchitecture(cloneArchitecture(baseline));
+    setHasEdits(false);
+    setError("");
+  }
+
+  function renameParameter(oldKey: string, newKey: string) {
+    if (!newKey || newKey === oldKey) return;
+    updateSelectedLayer((layer) => {
+      const entries = Object.entries(layer.params ?? {}).map(([key, value]) => key === oldKey ? [newKey, value] : [key, value]);
+      return { ...layer, params: Object.fromEntries(entries) };
+    });
+  }
+
+  function updateParameter(key: string, value: string) {
+    updateSelectedLayer((layer) => ({ ...layer, params: { ...(layer.params ?? {}), [key]: parseEditorValue(value) } }));
+  }
+
+  function removeParameter(key: string) {
+    updateSelectedLayer((layer) => {
+      const params = { ...(layer.params ?? {}) };
+      delete params[key];
+      return { ...layer, params };
+    });
+  }
+
+  function addParameter() {
+    updateSelectedLayer((layer) => {
+      const params = { ...(layer.params ?? {}) };
+      let index = 1;
+      while (`parameter_${index}` in params) index += 1;
+      params[`parameter_${index}`] = 0;
+      return { ...layer, params };
+    });
   }
 
   return (
@@ -213,6 +317,7 @@ export function GraphViewer() {
             <button className={sourceLabel.includes("residual") ? "active" : ""} onClick={() => selectSample("residual")}>Residual</button>
             <button className={sourceLabel.includes("mnist") ? "active" : ""} onClick={() => selectSample("mnist")}>MNIST</button>
           </div>
+          {hasEdits && <button className="reset-button" onClick={resetEdits}>Reset changes</button>}
           <input ref={fileRef} className="visually-hidden" type="file" accept=".yaml,.yml,text/yaml" onChange={(event) => event.target.files?.[0] && loadFile(event.target.files[0])} />
           <button className="open-button" onClick={() => fileRef.current?.click()}><span aria-hidden="true">↑</span> Open YAML</button>
         </div>
@@ -222,12 +327,13 @@ export function GraphViewer() {
         <div>
           <div className="eyebrow">{sourceLabel}</div>
           <h1>{architecture.model.name}</h1>
-          <p>A read-only view of the computation graph and its configured layers.</p>
+          <p>Select a layer to change its type and configured parameters.</p>
         </div>
-        <div className="status-pill"><span /> Parsed successfully</div>
+        <div className={`status-pill ${issues.length ? "warning" : ""}`}><span />{issues.length ? `${issues.length} issue${issues.length === 1 ? "" : "s"}` : hasEdits ? "Browser edits valid" : "Parsed successfully"}</div>
       </section>
 
       {error && <div className="error-banner" role="alert"><strong>Couldn’t open file.</strong> {error}</div>}
+      {issues.length > 0 && <div className="issue-banner" role="status"><strong>Needs attention.</strong> {issues[0]}</div>}
 
       <section className="stats-row" aria-label="Architecture summary">
         <article><span>Graph nodes</span><strong>{architecture.layers.length + Object.keys(architecture.inputs).length}</strong><small>{Object.keys(architecture.inputs).length} input + {architecture.layers.length} layers</small></article>
@@ -252,7 +358,7 @@ export function GraphViewer() {
         </aside>
 
         <section className="graph-panel panel" aria-label="Architecture graph">
-          <div className="canvas-toolbar"><div><span className="live-dot" />Graph</div><span>Click a node to inspect it</span></div>
+          <div className="canvas-toolbar"><div><span className="live-dot" />Graph · top to bottom</div><span>Click a layer to edit it</span></div>
           <div className="canvas-scroll">
             <div className="graph-canvas" style={{ width: graph.width, height: graph.height }}>
               <div className="grid-texture" />
@@ -260,12 +366,12 @@ export function GraphViewer() {
                 {graph.nodes.flatMap((node) => node.inputs.map((sourceId) => {
                   const source = nodeById.get(sourceId);
                   if (!source) return null;
-                  const x1 = source.x + NODE_WIDTH;
-                  const y1 = source.y + NODE_HEIGHT / 2;
-                  const x2 = node.x;
-                  const y2 = node.y + NODE_HEIGHT / 2;
-                  const bend = Math.max(42, (x2 - x1) * 0.48);
-                  return <path key={`${sourceId}-${node.id}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`} />;
+                  const x1 = source.x + NODE_WIDTH / 2;
+                  const y1 = source.y + NODE_HEIGHT;
+                  const x2 = node.x + NODE_WIDTH / 2;
+                  const y2 = node.y;
+                  const bend = Math.max(38, (y2 - y1) * 0.5);
+                  return <path key={`${sourceId}-${node.id}`} d={`M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}`} />;
                 }))}
               </svg>
               {graph.nodes.map((node) => (
@@ -286,7 +392,7 @@ export function GraphViewer() {
         </section>
 
         <aside className="right-panel panel">
-          <div className="panel-heading">Inspector <span className="readonly-tag">READ ONLY</span></div>
+          <div className="panel-heading">Node editor <span className="editor-tag">LIVE</span></div>
           {selected && <>
             <div className={`inspector-icon ${nodeTone(selected.type)}`}>{selected.type.slice(0, 2).toUpperCase()}</div>
             <div className="inspector-title"><h2>{selected.id}</h2><span>{selected.type}</span></div>
@@ -296,16 +402,34 @@ export function GraphViewer() {
               <div><dt>Model output</dt><dd>{outputSet.has(selected.id) ? "Yes" : "No"}</dd></div>
               {selected.shape && <div><dt>Declared shape</dt><dd>[{selected.shape.join(", ")}]</dd></div>}
             </dl>
-            <div className="parameter-heading">Parameters <span>{Object.keys(selected.params).length}</span></div>
-            <div className="parameter-list">
-              {Object.entries(selected.params).map(([key, value]) => <div key={key}><span>{key}</span><code>{formatValue(value)}</code></div>)}
-              {Object.keys(selected.params).length === 0 && <p>No configured parameters.</p>}
-            </div>
+            {selected.kind === "layer" ? <>
+              <div className="field-section">
+                <label htmlFor="layer-type">Layer type</label>
+                <select
+                  id="layer-type"
+                  value={selected.type}
+                  onChange={(event) => updateSelectedLayer((layer) => ({ ...layer, type: event.target.value, params: { ...(defaultParams[event.target.value] ?? {}) } }))}
+                >
+                  {layerTypes.map((type) => <option key={type}>{type}</option>)}
+                </select>
+                <small>Changing type replaces parameters with sensible defaults.</small>
+              </div>
+              <div className="parameter-heading">Parameters <span>{Object.keys(selected.params).length}</span></div>
+              <div className="parameter-editor">
+                {Object.entries(selected.params).map(([key, value]) => <div className="parameter-edit-row" key={`${selected.id}-${key}`}>
+                  <input aria-label="Parameter name" defaultValue={key} onBlur={(event) => renameParameter(key, event.target.value.trim())} />
+                  <input aria-label={`${key} value`} defaultValue={formatValue(value)} onBlur={(event) => updateParameter(key, event.target.value)} />
+                  <button aria-label={`Remove ${key}`} title={`Remove ${key}`} onClick={() => removeParameter(key)}>×</button>
+                </div>)}
+                {Object.keys(selected.params).length === 0 && <p>No configured parameters. This layer may not require any.</p>}
+                <button className="add-parameter" onClick={addParameter}>+ Add parameter</button>
+              </div>
+            </> : <div className="input-notice"><strong>Model input</strong><p>Input editing is not part of this layer-editing milestone.</p></div>}
           </>}
         </aside>
       </div>
 
-      <footer><span>Format v{architecture.format_version}</span><span>•</span><span>{architecture.layers.length} layers inspected</span><span className="footer-spacer" /><span>Local files stay in your browser</span></footer>
+      <footer><span>Format v{architecture.format_version}</span><span>•</span><span>{architecture.layers.length} layers</span>{hasEdits && <><span>•</span><span>Unsaved browser edits</span></>}<span className="footer-spacer" /><span>Local files stay in your browser</span></footer>
     </main>
   );
 }
