@@ -6,7 +6,7 @@ inputs, and multiple outputs.
 
 ## Architecture editor
 
-The web GUI in `gui/` visualizes the network graph from top to bottom, including
+The web GUI in `gui/` visualizes the network graph with switchable vertical and horizontal layouts, including
 node and layer counts, connections, layer-type inventory, configured parameters,
 inputs, and outputs. Select a layer to change its type or parameters and see the
 graph summary update immediately. It includes the MNIST and residual examples
@@ -18,9 +18,9 @@ npm install
 npm run dev
 ```
 
-Opening a file does not upload it. Edits remain temporary browser state in this
-milestone; saving edited YAML and changing graph connections will be added
-separately.
+Opening a file does not upload it. Layer edits stay in the browser and can be
+downloaded as a canonical, versioned YAML file with **Save YAML**. Changing graph
+connections will be added separately.
 
 ## Install
 

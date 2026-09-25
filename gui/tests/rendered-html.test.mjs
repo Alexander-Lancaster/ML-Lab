@@ -22,7 +22,9 @@ test("server-renders the ML-Lab architecture viewer", async () => {
   assert.match(html, /Graph nodes/i);
   assert.match(html, /Layer inventory/i);
   assert.match(html, /Node editor/i);
-  assert.match(html, /top to bottom/i);
+  assert.match(html, /Save YAML/i);
+  assert.match(html, /Vertical/i);
+  assert.match(html, /Horizontal/i);
   assert.match(html, /Layer type/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });

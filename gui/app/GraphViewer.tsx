@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { load as loadYaml } from "js-yaml";
+import { dump as dumpYaml, load as loadYaml } from "js-yaml";
 
 type Shape = number[];
 type InputSpec = { shape: Shape };
@@ -18,6 +18,7 @@ type Architecture = {
   layers: Layer[];
   outputs: string[];
 };
+type Orientation = "vertical" | "horizontal";
 type PositionedNode = {
   id: string;
   kind: "input" | "layer";
@@ -134,7 +135,7 @@ function normalizeArchitecture(raw: unknown): Architecture {
   };
 }
 
-function layoutGraph(architecture: Architecture) {
+function layoutGraph(architecture: Architecture, orientation: Orientation) {
   const level = new Map<string, number>();
   Object.keys(architecture.inputs).forEach((name) => level.set(name, 0));
   architecture.layers.forEach((layer) => {
@@ -144,17 +145,25 @@ function layoutGraph(architecture: Architecture) {
 
   const groups = new Map<number, string[]>();
   level.forEach((value, id) => groups.set(value, [...(groups.get(value) ?? []), id]));
-  const maxColumns = Math.max(...[...groups.values()].map((group) => group.length));
+  const maxPeers = Math.max(...[...groups.values()].map((group) => group.length));
   const maxLevel = Math.max(...level.values());
-  const canvasWidth = Math.max(620, maxColumns * NODE_WIDTH + (maxColumns - 1) * X_GAP + 112);
-  const canvasHeight = 96 + (maxLevel + 1) * NODE_HEIGHT + maxLevel * Y_GAP;
+  const canvasWidth = orientation === "vertical"
+    ? Math.max(620, maxPeers * NODE_WIDTH + (maxPeers - 1) * X_GAP + 112)
+    : 96 + (maxLevel + 1) * NODE_WIDTH + maxLevel * 84;
+  const canvasHeight = orientation === "vertical"
+    ? 96 + (maxLevel + 1) * NODE_HEIGHT + maxLevel * Y_GAP
+    : Math.max(500, maxPeers * NODE_HEIGHT + (maxPeers - 1) * 42 + 112);
   const layerById = new Map(architecture.layers.map((layer) => [layer.id, layer]));
   const nodes: PositionedNode[] = [];
 
-  [...groups.entries()].sort(([a], [b]) => a - b).forEach(([row, ids]) => {
-    const blockWidth = ids.length * NODE_WIDTH + (ids.length - 1) * X_GAP;
-    const startX = (canvasWidth - blockWidth) / 2;
-    ids.forEach((id, column) => {
+  [...groups.entries()].sort(([a], [b]) => a - b).forEach(([levelIndex, ids]) => {
+    const peerSpan = orientation === "vertical"
+      ? ids.length * NODE_WIDTH + (ids.length - 1) * X_GAP
+      : ids.length * NODE_HEIGHT + (ids.length - 1) * 42;
+    const peerStart = orientation === "vertical"
+      ? (canvasWidth - peerSpan) / 2
+      : (canvasHeight - peerSpan) / 2;
+    ids.forEach((id, peerIndex) => {
       const layer = layerById.get(id);
       const input = architecture.inputs[id];
       nodes.push({
@@ -164,8 +173,12 @@ function layoutGraph(architecture: Architecture) {
         inputs: layer?.inputs ?? [],
         params: layer?.params ?? {},
         shape: input?.shape,
-        x: startX + column * (NODE_WIDTH + X_GAP),
-        y: 48 + row * (NODE_HEIGHT + Y_GAP),
+        x: orientation === "vertical"
+          ? peerStart + peerIndex * (NODE_WIDTH + X_GAP)
+          : 48 + levelIndex * (NODE_WIDTH + 84),
+        y: orientation === "vertical"
+          ? 48 + levelIndex * (NODE_HEIGHT + Y_GAP)
+          : peerStart + peerIndex * (NODE_HEIGHT + 42),
       });
     });
   });
@@ -201,6 +214,22 @@ function cloneArchitecture(architecture: Architecture): Architecture {
   return structuredClone(architecture);
 }
 
+function serializeArchitecture(architecture: Architecture): string {
+  const canonical = {
+    format_version: architecture.format_version,
+    model: { name: architecture.model.name },
+    inputs: architecture.inputs,
+    layers: architecture.layers.map((layer) => ({
+      id: layer.id,
+      type: layer.type,
+      inputs: layer.inputs,
+      ...(layer.params && Object.keys(layer.params).length ? { params: layer.params } : {}),
+    })),
+    outputs: architecture.outputs,
+  };
+  return dumpYaml(canonical, { noRefs: true, sortKeys: false, lineWidth: 100 });
+}
+
 function graphIssues(architecture: Architecture): string[] {
   const known = new Set(Object.keys(architecture.inputs));
   const issues: string[] = [];
@@ -223,8 +252,10 @@ export function GraphViewer() {
   const [selectedId, setSelectedId] = useState("residual");
   const [error, setError] = useState("");
   const [hasEdits, setHasEdits] = useState(false);
+  const [orientation, setOrientation] = useState<Orientation>("vertical");
+  const [savedMessage, setSavedMessage] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  const graph = useMemo(() => layoutGraph(architecture), [architecture]);
+  const graph = useMemo(() => layoutGraph(architecture, orientation), [architecture, orientation]);
   const selected = graph.nodes.find((node) => node.id === selectedId) ?? graph.nodes[0];
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -244,6 +275,7 @@ export function GraphViewer() {
     setSelectedId(next.layers[0].id);
     setError("");
     setHasEdits(false);
+    setSavedMessage("");
   }
 
   async function loadFile(file: File) {
@@ -255,6 +287,7 @@ export function GraphViewer() {
       setSelectedId(parsed.layers[0].id);
       setError("");
       setHasEdits(false);
+      setSavedMessage("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not read that YAML file.");
     }
@@ -273,6 +306,26 @@ export function GraphViewer() {
     setArchitecture(cloneArchitecture(baseline));
     setHasEdits(false);
     setError("");
+    setSavedMessage("");
+  }
+
+  function saveYaml() {
+    if (issues.length) return;
+    const yaml = serializeArchitecture(architecture);
+    const blob = new Blob([yaml], { type: "application/yaml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeName = architecture.model.name.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "architecture";
+    link.href = url;
+    link.download = `${safeName}.yaml`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setBaseline(cloneArchitecture(architecture));
+    setHasEdits(false);
+    setSavedMessage(`Saved ${safeName}.yaml`);
+    window.setTimeout(() => setSavedMessage(""), 3200);
   }
 
   function renameParameter(oldKey: string, newKey: string) {
@@ -320,6 +373,7 @@ export function GraphViewer() {
           {hasEdits && <button className="reset-button" onClick={resetEdits}>Reset changes</button>}
           <input ref={fileRef} className="visually-hidden" type="file" accept=".yaml,.yml,text/yaml" onChange={(event) => event.target.files?.[0] && loadFile(event.target.files[0])} />
           <button className="open-button" onClick={() => fileRef.current?.click()}><span aria-hidden="true">↑</span> Open YAML</button>
+          <button className="save-button" onClick={saveYaml} disabled={issues.length > 0} title={issues.length ? "Resolve graph issues before saving" : "Download the current architecture as YAML"}><span aria-hidden="true">↓</span> Save YAML</button>
         </div>
       </header>
 
@@ -334,6 +388,7 @@ export function GraphViewer() {
 
       {error && <div className="error-banner" role="alert"><strong>Couldn’t open file.</strong> {error}</div>}
       {issues.length > 0 && <div className="issue-banner" role="status"><strong>Needs attention.</strong> {issues[0]}</div>}
+      {savedMessage && <div className="save-banner" role="status"><strong>Download ready.</strong> {savedMessage}</div>}
 
       <section className="stats-row" aria-label="Architecture summary">
         <article><span>Graph nodes</span><strong>{architecture.layers.length + Object.keys(architecture.inputs).length}</strong><small>{Object.keys(architecture.inputs).length} input + {architecture.layers.length} layers</small></article>
@@ -358,20 +413,37 @@ export function GraphViewer() {
         </aside>
 
         <section className="graph-panel panel" aria-label="Architecture graph">
-          <div className="canvas-toolbar"><div><span className="live-dot" />Graph · top to bottom</div><span>Click a layer to edit it</span></div>
+          <div className="canvas-toolbar">
+            <div><span className="live-dot" />Graph</div>
+            <div className="canvas-controls">
+              <span>Layout</span>
+              <div className="orientation-switch" aria-label="Graph orientation">
+                <button aria-pressed={orientation === "vertical"} className={orientation === "vertical" ? "active" : ""} onClick={() => setOrientation("vertical")}>Vertical</button>
+                <button aria-pressed={orientation === "horizontal"} className={orientation === "horizontal" ? "active" : ""} onClick={() => setOrientation("horizontal")}>Horizontal</button>
+              </div>
+            </div>
+          </div>
           <div className="canvas-scroll">
-            <div className="graph-canvas" style={{ width: graph.width, height: graph.height }}>
+            <div className={`graph-canvas ${orientation}-flow`} style={{ width: graph.width, height: graph.height }}>
               <div className="grid-texture" />
               <svg className="edges" width={graph.width} height={graph.height} aria-hidden="true">
                 {graph.nodes.flatMap((node) => node.inputs.map((sourceId) => {
                   const source = nodeById.get(sourceId);
                   if (!source) return null;
-                  const x1 = source.x + NODE_WIDTH / 2;
-                  const y1 = source.y + NODE_HEIGHT;
-                  const x2 = node.x + NODE_WIDTH / 2;
-                  const y2 = node.y;
-                  const bend = Math.max(38, (y2 - y1) * 0.5);
-                  return <path key={`${sourceId}-${node.id}`} d={`M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}`} />;
+                  if (orientation === "vertical") {
+                    const x1 = source.x + NODE_WIDTH / 2;
+                    const y1 = source.y + NODE_HEIGHT;
+                    const x2 = node.x + NODE_WIDTH / 2;
+                    const y2 = node.y;
+                    const bend = Math.max(38, (y2 - y1) * 0.5);
+                    return <path key={`${sourceId}-${node.id}`} d={`M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}`} />;
+                  }
+                  const x1 = source.x + NODE_WIDTH;
+                  const y1 = source.y + NODE_HEIGHT / 2;
+                  const x2 = node.x;
+                  const y2 = node.y + NODE_HEIGHT / 2;
+                  const bend = Math.max(42, (x2 - x1) * 0.48);
+                  return <path key={`${sourceId}-${node.id}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`} />;
                 }))}
               </svg>
               {graph.nodes.map((node) => (
