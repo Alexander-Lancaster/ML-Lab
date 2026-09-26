@@ -140,7 +140,7 @@ function layoutGraph(architecture: Architecture, orientation: Orientation) {
   Object.keys(architecture.inputs).forEach((name) => level.set(name, 0));
   architecture.layers.forEach((layer) => {
     const parentLevels = layer.inputs.map((input) => level.get(input) ?? 0);
-    level.set(layer.id, Math.max(...parentLevels) + 1);
+    level.set(layer.id, Math.max(...(parentLevels.length ? parentLevels : [0])) + 1);
   });
 
   const groups = new Map<number, string[]>();
@@ -242,6 +242,10 @@ function graphIssues(architecture: Architecture): string[] {
     if (!isMerge && layer.inputs.length !== 1) issues.push(`${layer.type} expects one input; ${layer.id} has ${layer.inputs.length}.`);
     known.add(layer.id);
   });
+  architecture.outputs.forEach((output) => {
+    if (!known.has(output)) issues.push(`Model output “${output}” does not exist.`);
+  });
+  if (architecture.outputs.length === 0) issues.push("The model needs at least one output.");
   return issues;
 }
 
@@ -358,6 +362,72 @@ export function GraphViewer() {
     });
   }
 
+  function addLayer() {
+    const knownIds = new Set([...Object.keys(architecture.inputs), ...architecture.layers.map((layer) => layer.id)]);
+    let index = architecture.layers.length + 1;
+    while (knownIds.has(`layer_${index}`)) index += 1;
+    const id = `layer_${index}`;
+    const fallbackSource = architecture.layers.at(-1)?.id ?? Object.keys(architecture.inputs)[0];
+    const source = selected?.id ?? fallbackSource;
+    const next: Layer = { id, type: "ReLU", inputs: source ? [source] : [] };
+    setArchitecture((current) => {
+      const outputs = source && current.outputs.includes(source)
+        ? current.outputs.map((output) => output === source ? id : output)
+        : [...current.outputs, id];
+      return { ...current, layers: [...current.layers, next], outputs: [...new Set(outputs)] };
+    });
+    setSelectedId(id);
+    setHasEdits(true);
+    setSavedMessage("");
+  }
+
+  function removeSelectedLayer() {
+    if (!selected || selected.kind !== "layer") return;
+    const removed = architecture.layers.find((layer) => layer.id === selected.id);
+    if (!removed) return;
+    const survivingIds = new Set([
+      ...Object.keys(architecture.inputs),
+      ...architecture.layers.filter((layer) => layer.id !== removed.id).map((layer) => layer.id),
+    ]);
+    const replacements = removed.inputs.filter((id) => survivingIds.has(id));
+    const layers = architecture.layers
+      .filter((layer) => layer.id !== removed.id)
+      .map((layer) => ({
+        ...layer,
+        inputs: [...new Set(layer.inputs.flatMap((input) => input === removed.id ? replacements : [input]))]
+          .filter((input) => input !== layer.id),
+      }));
+    let outputs = [...new Set(architecture.outputs.flatMap((output) => output === removed.id ? replacements : [output]))]
+      .filter((output) => survivingIds.has(output));
+    if (outputs.length === 0) {
+      const fallback = layers.at(-1)?.id ?? Object.keys(architecture.inputs)[0];
+      outputs = fallback ? [fallback] : [];
+    }
+    setArchitecture((current) => ({ ...current, layers, outputs }));
+    setSelectedId(replacements[0] ?? layers.at(-1)?.id ?? Object.keys(architecture.inputs)[0] ?? "");
+    setHasEdits(true);
+    setSavedMessage("");
+  }
+
+  function addConnection(sourceId: string) {
+    if (!sourceId) return;
+    updateSelectedLayer((layer) => layer.inputs.includes(sourceId)
+      ? layer
+      : { ...layer, inputs: [...layer.inputs, sourceId] });
+  }
+
+  function removeConnection(sourceId: string) {
+    updateSelectedLayer((layer) => ({ ...layer, inputs: layer.inputs.filter((input) => input !== sourceId) }));
+  }
+
+  const selectedLayerIndex = selected?.kind === "layer"
+    ? architecture.layers.findIndex((layer) => layer.id === selected.id)
+    : -1;
+  const connectionCandidates = selectedLayerIndex < 0 ? [] : [
+    ...Object.keys(architecture.inputs),
+    ...architecture.layers.slice(0, selectedLayerIndex).map((layer) => layer.id),
+  ].filter((id) => !selected.inputs.includes(id));
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -381,7 +451,7 @@ export function GraphViewer() {
         <div>
           <div className="eyebrow">{sourceLabel}</div>
           <h1>{architecture.model.name}</h1>
-          <p>Select a layer to change its type and configured parameters.</p>
+          <p>Add, connect, and configure layers while the architecture updates live.</p>
         </div>
         <div className={`status-pill ${issues.length ? "warning" : ""}`}><span />{issues.length ? `${issues.length} issue${issues.length === 1 ? "" : "s"}` : hasEdits ? "Browser edits valid" : "Parsed successfully"}</div>
       </section>
@@ -416,6 +486,7 @@ export function GraphViewer() {
           <div className="canvas-toolbar">
             <div><span className="live-dot" />Graph</div>
             <div className="canvas-controls">
+              <button className="add-layer-button" onClick={addLayer}>+ Add layer</button>
               <span>Layout</span>
               <div className="orientation-switch" aria-label="Graph orientation">
                 <button aria-pressed={orientation === "vertical"} className={orientation === "vertical" ? "active" : ""} onClick={() => setOrientation("vertical")}>Vertical</button>
@@ -475,6 +546,25 @@ export function GraphViewer() {
               {selected.shape && <div><dt>Declared shape</dt><dd>[{selected.shape.join(", ")}]</dd></div>}
             </dl>
             {selected.kind === "layer" ? <>
+              <div className="connection-section">
+                <div className="parameter-heading">Connections <span>{selected.inputs.length}</span></div>
+                <div className="connection-list">
+                  {selected.inputs.map((input) => <div className="connection-row" key={input}>
+                    <span><i />{input}</span>
+                    <button onClick={() => removeConnection(input)} aria-label={`Remove connection from ${input}`} title={`Remove connection from ${input}`}>×</button>
+                  </div>)}
+                  {selected.inputs.length === 0 && <p>No incoming connections.</p>}
+                  <select
+                    aria-label="Add incoming connection"
+                    value=""
+                    disabled={connectionCandidates.length === 0}
+                    onChange={(event) => addConnection(event.target.value)}
+                  >
+                    <option value="">+ Add connection</option>
+                    {connectionCandidates.map((id) => <option key={id} value={id}>{id}</option>)}
+                  </select>
+                </div>
+              </div>
               <div className="field-section">
                 <label htmlFor="layer-type">Layer type</label>
                 <select
@@ -495,6 +585,10 @@ export function GraphViewer() {
                 </div>)}
                 {Object.keys(selected.params).length === 0 && <p>No configured parameters. This layer may not require any.</p>}
                 <button className="add-parameter" onClick={addParameter}>+ Add parameter</button>
+              </div>
+              <div className="danger-zone">
+                <button onClick={removeSelectedLayer}>Delete layer</button>
+                <small>Consumers will be reconnected to this layer’s inputs when possible.</small>
               </div>
             </> : <div className="input-notice"><strong>Model input</strong><p>Input editing is not part of this layer-editing milestone.</p></div>}
           </>}

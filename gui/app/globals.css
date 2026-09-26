@@ -87,6 +87,8 @@ h1 { font-family: Georgia, "Times New Roman", serif; font-size: clamp(31px, 3vw,
 .canvas-toolbar > div { color: var(--ink); text-transform: uppercase; letter-spacing: .08em; font-weight: 780; }
 .canvas-controls { display: flex; align-items: center; gap: 8px; }
 .canvas-controls > span { color: var(--muted); font-size: 8px; }
+.add-layer-button { border: 1px solid #b9c6be; background: white; color: var(--green); border-radius: 7px; padding: 6px 9px; cursor: pointer; font-size: 9px; font-weight: 750; letter-spacing: 0; text-transform: none; }
+.add-layer-button:hover { border-color: var(--green); background: #f2f8f4; }
 .orientation-switch { display: flex; background: #e9ece8; border-radius: 7px; padding: 2px; }
 .orientation-switch button { border: 0; background: transparent; color: #717c76; border-radius: 5px; padding: 5px 8px; cursor: pointer; font-size: 8px; letter-spacing: 0; text-transform: none; }
 .orientation-switch button.active { background: white; color: var(--ink); box-shadow: 0 1px 3px rgba(20, 30, 25, .12); }
@@ -139,6 +141,20 @@ h1 { font-family: Georgia, "Times New Roman", serif; font-size: clamp(31px, 3vw,
 .parameter-editor p { font-size: 9px; color: #8b958f; line-height: 1.45; }
 .add-parameter { width: 100%; border: 1px dashed #bfc8c2; background: transparent; border-radius: 7px; color: #58645d; padding: 8px; font-size: 9px; cursor: pointer; margin-top: 3px; }
 .add-parameter:hover { border-color: var(--green); color: var(--green); background: #f5faf7; }
+.connection-section { border-bottom: 1px solid #e7ebe8; }
+.connection-list { padding: 0 16px 14px; }
+.connection-list > p { color: #8b958f; font-size: 9px; margin: 2px 0 9px; }
+.connection-row { display: flex; align-items: center; justify-content: space-between; min-height: 30px; border: 1px solid #dce3de; border-radius: 7px; padding: 5px 6px 5px 9px; margin-bottom: 6px; background: #fbfcfa; font-size: 9px; }
+.connection-row span { display: flex; align-items: center; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
+.connection-row i { width: 7px; height: 7px; flex: 0 0 auto; border: 1.5px solid var(--green); border-radius: 50%; background: white; }
+.connection-row button { border: 0; background: transparent; color: #9b6a55; cursor: pointer; border-radius: 5px; font-size: 15px; line-height: 1; }
+.connection-row button:hover { background: #fff0e9; }
+.connection-list select { width: 100%; border: 1px dashed #bfc8c2; background: white; color: #58645d; border-radius: 7px; padding: 8px; cursor: pointer; font-size: 9px; }
+.connection-list select:disabled { cursor: not-allowed; opacity: .5; }
+.danger-zone { margin: 4px 12px 0; padding: 13px 4px 2px; border-top: 1px solid #eee1db; }
+.danger-zone button { width: 100%; border: 1px solid #e0b9a8; background: #fff8f4; color: #9a4521; border-radius: 7px; padding: 8px; cursor: pointer; font-size: 9px; }
+.danger-zone button:hover { background: #fff0e9; border-color: #c77b59; }
+.danger-zone small { display: block; color: #95877f; font-size: 8px; line-height: 1.45; margin-top: 6px; }
 .input-notice { margin: 15px; padding: 13px; background: #f1f5fa; border: 1px solid #dbe4ef; border-radius: 8px; }
 .input-notice strong { font-size: 10px; }.input-notice p { color: var(--muted); font-size: 9px; line-height: 1.5; margin: 5px 0 0; }
 
