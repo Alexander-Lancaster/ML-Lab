@@ -15,6 +15,11 @@ env/
 dist/
 build/
 
+# The GUI's Vite configuration imports this source plugin. It is source code,
+# not generated build output, so it must be present in clean checkouts and CI.
+!gui/build/
+!gui/build/sites-vite-plugin.ts
+
 # Test, coverage, and type-checker output
 .coverage
 .coverage.*
