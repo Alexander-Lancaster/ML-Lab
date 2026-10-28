@@ -1,0 +1,132 @@
+[
+  {
+    "name": "legacy sequential architecture",
+    "valid": true,
+    "document": {
+      "model": { "name": "small_classifier" },
+      "input": { "shape": [4] },
+      "layers": [
+        { "type": "Linear", "params": { "in_features": 4, "out_features": 8 } },
+        { "type": "ReLU" },
+        { "type": "Linear", "params": { "in_features": 8, "out_features": 2 } }
+      ]
+    }
+  },
+  {
+    "name": "named graph with a residual branch",
+    "valid": true,
+    "document": {
+      "format_version": 1,
+      "model": { "name": "residual_example" },
+      "inputs": { "image": { "shape": [3, 32, 32] } },
+      "layers": [
+        { "id": "stem", "type": "Conv2d", "inputs": ["image"], "params": { "in_channels": 3, "out_channels": 16, "kernel_size": 3, "padding": 1 } },
+        { "id": "transformed", "type": "Conv2d", "inputs": ["stem"], "params": { "in_channels": 16, "out_channels": 16, "kernel_size": 3, "padding": 1 } },
+        { "id": "residual", "type": "Add", "inputs": ["stem", "transformed"] }
+      ],
+      "outputs": ["residual"]
+    }
+  },
+  {
+    "name": "multiple named inputs and outputs",
+    "valid": true,
+    "document": {
+      "format_version": 1,
+      "model": { "name": "two_towers" },
+      "inputs": {
+        "left": { "shape": [4] },
+        "right": { "shape": [4] }
+      },
+      "layers": [
+        { "id": "left_out", "type": "Linear", "inputs": ["left"], "params": { "in_features": 4, "out_features": 2 } },
+        { "id": "right_out", "type": "Linear", "inputs": ["right"], "params": { "in_features": 4, "out_features": 2 } }
+      ],
+      "outputs": ["left_out", "right_out"]
+    }
+  },
+  {
+    "name": "unknown document field",
+    "valid": false,
+    "document": {
+      "model": { "name": "bad" },
+      "input": { "shape": [4] },
+      "layers": [{ "type": "ReLU" }],
+      "surprise": true
+    }
+  },
+  {
+    "name": "unsupported format version",
+    "valid": false,
+    "document": {
+      "format_version": 2,
+      "model": { "name": "bad" },
+      "input": { "shape": [4] },
+      "layers": [{ "type": "ReLU" }]
+    }
+  },
+  {
+    "name": "both input representations",
+    "valid": false,
+    "document": {
+      "model": { "name": "bad" },
+      "input": { "shape": [4] },
+      "inputs": { "features": { "shape": [4] } },
+      "layers": [{ "id": "activation", "type": "ReLU", "inputs": ["features"] }]
+    }
+  },
+  {
+    "name": "non-positive input dimension",
+    "valid": false,
+    "document": {
+      "model": { "name": "bad" },
+      "input": { "shape": [4, 0] },
+      "layers": [{ "type": "ReLU" }]
+    }
+  },
+  {
+    "name": "graph layer missing id",
+    "valid": false,
+    "document": {
+      "model": { "name": "bad" },
+      "inputs": { "features": { "shape": [4] } },
+      "layers": [{ "type": "ReLU", "inputs": ["features"] }]
+    }
+  },
+  {
+    "name": "invalid graph identifier",
+    "valid": false,
+    "document": {
+      "model": { "name": "bad" },
+      "inputs": { "features": { "shape": [4] } },
+      "layers": [{ "id": "not valid", "type": "ReLU", "inputs": ["features"] }]
+    }
+  },
+  {
+    "name": "empty layers",
+    "valid": false,
+    "document": {
+      "model": { "name": "bad" },
+      "input": { "shape": [4] },
+      "layers": []
+    }
+  },
+  {
+    "name": "parameters are not a mapping",
+    "valid": false,
+    "document": {
+      "model": { "name": "bad" },
+      "input": { "shape": [4] },
+      "layers": [{ "type": "ReLU", "params": [1, 2] }]
+    }
+  },
+  {
+    "name": "duplicate outputs",
+    "valid": false,
+    "document": {
+      "model": { "name": "bad" },
+      "inputs": { "features": { "shape": [4] } },
+      "layers": [{ "id": "activation", "type": "ReLU", "inputs": ["features"] }],
+      "outputs": ["activation", "activation"]
+    }
+  }
+]

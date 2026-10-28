@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Alexander-Lancaster/ML-Lab/schema/architecture.schema.json",
+  "title": "ML-Lab architecture",
+  "description": "Structural contract for ML-Lab YAML architecture documents.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["model", "layers"],
+  "properties": {
+    "format_version": { "const": 1 },
+    "model": { "$ref": "#/$defs/model" },
+    "input": { "$ref": "#/$defs/input" },
+    "inputs": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/identifier" },
+      "additionalProperties": { "$ref": "#/$defs/input" }
+    },
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/layer" }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Sequential shorthand",
+      "required": ["input"],
+      "properties": { "input": true, "inputs": false }
+    },
+    {
+      "title": "Named graph",
+      "required": ["inputs"],
+      "properties": {
+        "input": false,
+        "inputs": true,
+        "layers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/graphLayer" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shape"],
+      "properties": {
+        "shape": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "type": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "params": { "type": "object" }
+      }
+    },
+    "graphLayer": {
+      "allOf": [
+        { "$ref": "#/$defs/layer" },
+        {
+          "type": "object",
+          "required": ["id", "inputs"],
+          "properties": { "id": true, "inputs": true }
+        }
+      ]
+    }
+  }
+}

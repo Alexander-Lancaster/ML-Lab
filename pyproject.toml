@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["jsonschema>=4.23", "pytest>=8.0"]
 
 [project.scripts]
 ml-lab = "ml_lab.cli:main"
